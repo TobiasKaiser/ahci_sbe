@@ -29,20 +29,96 @@ pci_data_structure_end:
 
 
 start:
-    mov EAX, 0xABCD
-    call putword 
-
-;while:
-;    mov AH, 0
-;    int 0x16 
-;    call putc
-;    jmp while
+    push CS
+    pop DS
 
 
-    jmp $
+    ; Find AHCI controller via BIOS
+    ; -----------------------------
+
+    ; Step 1: Does the BIOS support PCI?
+
+    mov AX, 0b101h
+    int 1ah
+    ;cmp DX, 4350h ; "CP" from "PCI"
+    cmp EDX, 20494350h ; " ICP"?!?
+    jz pci_present
+
+    mov AX, err_no_pci
+    call puts
+    call pause
+    retf
+
+pci_present:
+
+    ; Step 2: Find the AHCI/SATA controller (class id 01h, subclass id 06h, prog-if 01h)
+
+    mov AX, 0b103h ; find pci class code
+    mov ECX, 010601h
+    mov SI, 0 ; find only first device. must be repeated with SI=1,2... to support multiple ahcis
+    int 1ah
+    jnc ahci_present
+
+    mov AX, err_no_ahci
+    call puts
+    call pause
+    retf
+
+ahci_present:
+
+    ; BL/HL is now bus number, device/function number
+    ; now we need the HBA (host bus adapter), referenced by ABAR (AHCI Base Memory Register), which is BAR[5]=PCI header offset 24h.
+    ; we get that from the bios, by which BL/BH is already set accordingly
+    mov AX, 0b10ah ; read configuration dword
+    mov DI, 24h
+    int 1ah
+    jnc abar_success
+
+    mov AX, err_abar
+    call puts
+    call pause
+    retf
+
+abar_success:
+
+    mov [abar], ECX
+    
+
+
+    mov AX, hello_msg
+    call puts
+
+    mov EAX, [abar]
+    call putdword
+    call nl
+
+    ;call pause
+    ;jmp start
+echo:
+    call getc
+    call putc
+    jmp echo
+
+
+    retf
+
+
+
 
 
 %include "io.asm"
+    
+    ; Strings
+hello_msg db `ahci_sbe v. 0.2\n\0`
+pause_msg db `Press any key to continue...\n\0`
+
+
+err_no_pci db `PCI not present\n\0`
+err_no_ahci db `AHCI not present\n\0`
+err_abar db `Failed to read ABAR\n\0`
+
+abar dd 0x00000000 ; save ABAR here
+
 
     db 0 ; reserve at least one byte for checksum
 rom_end equ $-$$
