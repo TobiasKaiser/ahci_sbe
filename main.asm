@@ -32,6 +32,61 @@ start:
     push CS
     pop DS
 
+    ; Detect POST memory manager
+    ; --------------------------
+
+    mov AX, 0xE000
+    mov ES, AX
+pmm_detection_loop:
+    mov EBX, [ES:0]
+    cmp EBX, 0x4d4d5024
+    jz pmm_detected
+    inc AX
+    mov ES, AX
+    jnz pmm_detection_loop
+
+    mov AX, err_no_pmm
+    call puts
+    call pause
+    retf
+
+pmm_detected:
+
+    ; calculate checksum
+    mov BX, 0 ; offset
+    mov CL, 0 ; checksum comes here
+    mov AL, [ES:05h] ; length
+
+pmm_sum:
+    add CL, [ES:BX]
+    inc BL
+    cmp BL, AL
+    jl pmm_sum
+
+    cmp CL, 0
+    jz pmm_sum_success
+
+    mov AX, err_pmm_chksum
+    call puts
+    call pause
+    retf
+
+pmm_sum_success:
+
+    mov AX, [ES:07h]    
+    call putword
+    call nl
+    mov [pmm_entry_point], AX
+    mov AX, [ES:07h+2]    
+    call putword
+    call nl
+    mov [pmm_entry_point+2], AX
+
+
+    call far [pmm_entry_point]
+
+    call pause
+    
 
     ; Find AHCI controller via BIOS
     ; -----------------------------
@@ -112,12 +167,14 @@ echo:
 hello_msg db `ahci_sbe v. 0.2\n\0`
 pause_msg db `Press any key to continue...\n\0`
 
-
 err_no_pci db `PCI not present\n\0`
 err_no_ahci db `AHCI not present\n\0`
 err_abar db `Failed to read ABAR\n\0`
+err_no_pmm db `PMM not present\n\0`
+err_pmm_chksum db `PMM checksum mismatch\n\0`
 
 abar dd 0x00000000 ; save ABAR here
+pmm_entry_point dw 0x0000, 0x0000 ; save PMM entry point here
 
 
     db 0 ; reserve at least one byte for checksum
