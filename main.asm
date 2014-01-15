@@ -1,6 +1,6 @@
 org 0
-;rom_size_multiple_of equ 4096
-rom_size_multiple_of equ 512
+rom_size_multiple_of equ 4096
+;rom_size_multiple_of equ 512
 bits 16
     ; PCI Expansion Rom Header
     ; ------------------------
@@ -73,91 +73,67 @@ pmm_sum:
 
 pmm_sum_success:
 
+    ; save entry point - our PMM interfe far function pointer
     mov AX, [ES:07h]    
-    call putword
-    call nl
     mov [pmm_entry_point], AX
     mov AX, [ES:07h+2]    
-    call putword
-    call nl
     mov [pmm_entry_point+2], AX
 
+    mov AX, 0
+    mov ES, AX ; now we can use ES for 32 bit physical adressing
 
-    call far [pmm_entry_point]
+    ; Allocate memory
+    ; ---------------
+    mov EAX, 1024/16
+    call pmm_alloc_paragraphs
+    mov [cmd_list], EAX
 
-    call pause
+    mov EAX, 256/16
+    call pmm_alloc_paragraphs
+    mov [cmd_table], EAX
+
+    mov EAX, 256/16
+    call pmm_alloc_paragraphs
+    mov [fis_recv], EAX
+
+    mov EAX, 512/16
+    call pmm_alloc_paragraphs
+    mov [result_buf], EAX
     
-
-    ; Find AHCI controller via BIOS
-    ; -----------------------------
-
-    ; Step 1: Does the BIOS support PCI?
-
-    mov AX, 0b101h
-    int 1ah
-    ;cmp DX, 4350h ; "CP" from "PCI"
-    cmp EDX, 20494350h ; " ICP"?!?
-    jz pci_present
-
-    mov AX, err_no_pci
-    call puts
-    call pause
-    retf
-
-pci_present:
-
-    ; Step 2: Find the AHCI/SATA controller (class id 01h, subclass id 06h, prog-if 01h)
-
-    mov AX, 0b103h ; find pci class code
-    mov ECX, 010601h
-    mov SI, 0 ; find only first device. must be repeated with SI=1,2... to support multiple ahcis
-    int 1ah
-    jnc ahci_present
-
-    mov AX, err_no_ahci
-    call puts
-    call pause
-    retf
-
-ahci_present:
-
-    ; BL/HL is now bus number, device/function number
-    ; now we need the HBA (host bus adapter), referenced by ABAR (AHCI Base Memory Register), which is BAR[5]=PCI header offset 24h.
-    ; we get that from the bios, by which BL/BH is already set accordingly
-    mov AX, 0b10ah ; read configuration dword
-    mov DI, 24h
-    int 1ah
-    jnc abar_success
-
-    mov AX, err_abar
-    call puts
-    call pause
-    retf
-
-abar_success:
-
-    mov [abar], ECX
-    
-
+%include "abar.asm"
 
     mov AX, hello_msg
     call puts
 
-    mov EAX, [abar]
-    call putdword
-    call nl
+%include "ahci.asm"
 
-    ;call pause
-    ;jmp start
-echo:
-    call getc
-    call putc
-    jmp echo
-
-
+    ; End of program
+    ; --------------
+    call pause
     retf
 
 
+pmm_alloc_paragraphs:
+    push word 0b111 ; Flags: Aligned, conventional or extended
+    push dword 0xFFFFFFFF ; anonymous allocation
+
+    push EAX; size in paragraphs
+    push 0x0000 ; function: allocate
+    call far [pmm_entry_point]
+    add sp, 12 ; clean up after C style function call
+    
+    xchg DX, AX
+    shl EAX, 16
+    mov AX, DX
+    cmp EAX, 0
+    je pmm_alloc_fail
+    ret
+
+pmm_alloc_fail:
+    mov AX, err_pmm_alloc
+    call puts
+    call nl
+    jmp $ ; we cant retf here, since we would need a stack frame for that.
 
 
 
@@ -171,6 +147,7 @@ err_no_pci db `PCI not present\n\0`
 err_no_ahci db `AHCI not present\n\0`
 err_abar db `Failed to read ABAR\n\0`
 err_no_pmm db `PMM not present\n\0`
+err_pmm_alloc db `PMM alloc failed\n\0`
 err_pmm_chksum db `PMM checksum mismatch\n\0`
 
 abar dd 0x00000000 ; save ABAR here
