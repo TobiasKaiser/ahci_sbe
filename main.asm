@@ -1,6 +1,6 @@
 org 0
-rom_size_multiple_of equ 4096
-;rom_size_multiple_of equ 512
+;rom_size_multiple_of equ 4096
+rom_size_multiple_of equ 512
 bits 16
     ; PCI Expansion Rom Header
     ; ------------------------
@@ -92,7 +92,7 @@ pmm_sum_success:
     call pmm_alloc_paragraphs
     mov [cmd_table], EAX
 
-    mov EAX, 256/16
+    mov EAX, 4096/16
     call pmm_alloc_paragraphs
     mov [fis_recv], EAX
 
@@ -136,6 +136,19 @@ pmm_alloc_fail:
     jmp $ ; we cant retf here, since we would need a stack frame for that.
 
 
+memclear: ; set AX bytes starting at ES:ECX to 0x00
+    push AX
+    push ECX
+    
+memclear_loop:
+    mov [ES:ECX], byte 0
+    inc ECX
+    dec AX
+    jnz memclear_loop
+
+    pop ECX
+    pop AX
+    ret
 
 %include "io.asm"
     

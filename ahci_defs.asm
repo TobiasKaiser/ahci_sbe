@@ -36,3 +36,11 @@ struc HBA_PORT
     resd 11 ; reserved
     resd 4 ; vendor
 endstruc
+
+struc HBA_CMD_HEADER
+    .flags: resw 1
+    .prdtl: resw 1
+    .prdbc: resd 1
+    .ctba: resd 1
+    .ctbau: resd 1
+endstruc
