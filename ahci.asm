@@ -288,7 +288,7 @@ unlock:
 
 copy_password:
     mov AX, [BX]
-    xchg AL, AH
+    ;xchg AL, AH
     mov [ES:ECX], AX
 
     add ECX, 2
@@ -319,19 +319,15 @@ copy_password:
     mov AX, msg_issuing
     call puts
 
-    mov [ES:EBX+HBA_PORT.is], dword 0 ; reset all interrupts
-    mov EDX, 0
+    mov [ES:EBX+HBA_PORT.is], dword (1<<30) ; reset TFES
 
     ; Set CI bit 0
     mov [ES:EBX+HBA_PORT.ci], dword 1
     
 wait_unlock:
     mov EAX, [ES:EBX+HBA_PORT.is]
-    cmp EAX, EDX
-    jz no_is_change
-    call putdword 
-    mov EDX, EAX
-no_is_change:
+    test EAX, (1<<30) ; TFES
+    jnz abort
 
     mov EAX, [ES:EBX+HBA_PORT.ci]
     test EAX, 1
@@ -341,9 +337,12 @@ no_is_change:
     mov AX, msg_unlock_completed
     call puts 
 
+    mov [needs_reboot], byte 1
+
     ret
 abort:
-    mov AX, msg_pxis_ifs_set
+    mov AX, msg_abort
+
     call puts
 
 
@@ -433,7 +432,7 @@ msg_no_device_attached db `No device attached\n\0`
 msg_no_ata_device db `No ATA device\n\0`
 msg_no_security db `Security mode feature set not supported\n\0`
 msg_unlock_completed db `UNLOCK completed\n\0`
-msg_pxis_ifs_set db `PxIS.IFS set\n\0`
+msg_abort db `aborted!\n\0`
 
 pw_test:
     db "test123"

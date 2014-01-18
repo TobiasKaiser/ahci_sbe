@@ -111,6 +111,59 @@ pmm_sum_success:
     ; --------------
     mov AX, end_msg
     call puts
+    retf
+    mov AX, [needs_reboot]
+    cmp AX, 0
+    jz no_reboot 
+    mov AX, end_msg_rb
+    call puts
+    call pause
+
+    ; Reboot
+    ; ------
+
+    jmp 0xFFFF:0x0000
+
+;    cli
+;reboot_loop:
+;    in AL, 0x64
+;    test AL, (1<<0)
+;    jz no_read_io
+;    mov AL, 0x60
+;no_read_io:
+;    in AL, 0x64
+;    test AL, (1<<1)
+;    jnz reboot_loop
+;    
+;    mov AL, 0xFE
+;    out 0x64, AL
+;halt:
+;    hlt
+;    jmp halt
+;    
+;void reboot()
+;{
+;    uint8_t temp;
+; 
+;    asm volatile ("cli"); /* disable all interrupts */
+; 
+;    /* Clear all keyboard buffers (output and command buffers) */
+;    do
+;    {
+;        temp = inb(KBRD_INTRFC); /* empty user data */
+;        if (check_flag(temp, KBRD_BIT_KDATA) != 0)
+;            inb(KBRD_IO); /* empty keyboard data */
+;    } while (check_flag(temp, KBRD_BIT_UDATA) != 0);
+; 
+;    outb(KBRD_INTRFC, KBRD_RESET); /* pulse CPU reset line */
+;    loop:
+;    asm volatile ("hlt"); /* if that didn't work, halt the CPU */
+;    goto loop; /* But if a non maskable interrupt is received, halt again */
+;}
+
+
+
+no_reboot:
     call pause
     retf
 
@@ -157,6 +210,7 @@ memclear_loop:
     ; Strings
 hello_msg db `ahci_sbe v. 0.2\n\0`
 end_msg db `==== END ====\n\0`
+end_msg_rb db `Will reboot now!\n\0`
 pause_msg db `Press any key to continue...\n\0`
 
 err_no_pci db `PCI not present\n\0`
@@ -168,6 +222,7 @@ err_pmm_chksum db `PMM checksum mismatch\n\0`
 
 abar dd 0x00000000 ; save ABAR here
 pmm_entry_point dw 0x0000, 0x0000 ; save PMM entry point here
+needs_reboot db 0 ; set to 1 if we need reboot
 
 
     db 0 ; reserve at least one byte for checksum
