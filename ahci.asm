@@ -1,9 +1,5 @@
 %include "ahci_defs.asm"
 
-    mov AX, msg_ahci_check_now
-    call puts
-    call pause
-
     ; Clear fis_recv
     mov ECX, [fis_recv]
     mov AX, 256
@@ -13,9 +9,7 @@
     ; Step 1: check AHCI
     ; ------------------
 
-    mov EBX, [abar]
-    mov EAX, EBX
-    call putdword
+    mov EBX, [abar] ; EBX will be reserved for abar a while
 
     mov EAX, [ES:EBX+HBA.ghc]
     test EAX, (1<<31) ; AE = AHCI enabled
@@ -54,11 +48,11 @@ ahci_port_loop:
     test EAX, [ES:EBX+HBA.pi]
     jz ahci_end_port ; port not implemented
 
-    mov AX, msg_port 
-    call puts
-    mov AL, CL
-    call putbyte
-    call nl
+    ;mov AX, msg_port 
+    ;call puts
+    ;mov AL, CL
+    ;call putbyte
+    ;call nl
 
     
     push CX
@@ -74,7 +68,6 @@ ahci_port_loop:
     pop CX
     
 
-    call pause
 ahci_end_port:
     inc CL
     cmp CL, 32
@@ -94,8 +87,8 @@ check_port:
     cmp EAX, 3
     je check_port_det_ok
 
-    mov AX, msg_no_device_attached
-    call puts
+    ;mov AX, msg_no_device_attached
+    ;call puts
     ret
 check_port_det_ok:
 
@@ -104,8 +97,8 @@ check_port_det_ok:
     cmp EAX, 0x101
     je check_port_sig_ok 
 
-    mov AX, msg_no_ata_device
-    call puts
+    ;mov AX, msg_no_ata_device
+    ;call puts
     ret
 check_port_sig_ok:
 
@@ -116,6 +109,7 @@ check_port_sig_ok:
 
     mov AX, err_port_not_idle
     call puts
+    call pause
     ret
 check_port_cmd_ok:
 
@@ -144,15 +138,25 @@ wait_fr:
     mov [ES:EBX+HBA_PORT.cmd], EAX
 
     call identify
-    call identify_info
-    call identify
-    call identify_info
     call is_locked
     cmp AX, 0
     jz not_locked
+
+unlock_loop:
+
     call unlock
+    cmp AX, 0
+    jz unlock_done
+
+    call wrong_password_error_box
+    call cls
+
+    jmp unlock_loop
+
+    
 not_locked:
 
+unlock_done:
 
 
     ; Stop port
@@ -191,72 +195,21 @@ identify:
     mov [ES:ECX+12], dword 512-1 ; count ?!?
 
     call issue_command
-    ret
-
-identify_info:
+    
+    ; put hdd name in identify_strbuf
     mov ECX, [ahci_data_buf]
     add ECX, 27*2 ; model number offset
     mov DX, 20 ; 20 words = 40 ascii chars
     call fill_identify_strbuf
-    mov AX, identify_strbuf
-    call puts
-    call nl
 
-
-    mov ECX, [ahci_data_buf]
-    mov AX, [ES:ECX+82*2]
-    and AX, (1<<1)
-    jnz security_supported ; Bit "Security mode feature set supported?". Maybe "Security mode feature set enabled" is also relevant?
-    mov AX, msg_no_security
-    call puts
     ret
 
-security_supported:
 
-    ; Debug: print security status
-    ; ----------------------------
-
-    mov AX, [ES:ECX+128*2]
-    test AX, (1<<4)
-    jz skip_count_expired
-    push AX
-    mov AX, info_count_expired
-    call puts
-    pop AX
-skip_count_expired:
-    test AX, (1<<3)
-    jz skip_frozen
-    push AX
-    mov AX, info_frozen
-    call puts
-    pop AX
-skip_frozen:
-    test AX, (1<<2)
-    jz skip_locked
-    push AX
-    mov AX, info_locked
-    call puts
-    pop AX
-skip_locked:
-    test AX, (1<<1)
-    jz skip_enabled
-    push AX
-    mov AX, info_enabled
-    call puts
-    pop AX
-skip_enabled:
-    test AX, (1<<0)
-    jz skip_supported
-    push AX
-    mov AX, info_supported
-    call puts
-    pop AX
-skip_supported:
-    ret
-    
     ; Should we ask for a password?
     ; -----------------------------
 is_locked:
+    mov ECX, [ahci_data_buf]
+    mov AX, [ES:ECX+128*2] ; Security word from IDENTIFY
     test AX, (1<<3)|(1<<4)
     jz not_frozen_or_count_expired
     mov AX, 0
@@ -276,28 +229,10 @@ supported_enabled_and_locked:
 unlock:
     call clearall
 
-    mov ECX, [ahci_data_buf]
+    call pw_dialog
+    call cls
     
     ; Control word is 0 (already cleared) => only user password support
-
-    ; Copy password
-    add ECX, 2 ; password offset
-    push EBX
-    mov DX, 16 ; # words left to copy
-    mov BX, pw_test
-
-copy_password:
-    mov AX, [BX]
-    ;xchg AL, AH
-    mov [ES:ECX], AX
-
-    add ECX, 2
-    add BX, 2
-    
-    dec DX
-    jnz copy_password
-     
-    pop EBX
 
 
     mov ECX, [cmd_list]
@@ -316,9 +251,6 @@ copy_password:
     mov [ES:ECX], EAX ; address
     mov [ES:ECX+12], dword 512-1 ; count ?!?
 
-    mov AX, msg_issuing
-    call puts
-
     mov [ES:EBX+HBA_PORT.is], dword (1<<30) ; reset TFES
 
     ; Set CI bit 0
@@ -334,18 +266,23 @@ wait_unlock:
     jnz wait_unlock
     ; command completed
 
-    mov AX, msg_unlock_completed
-    call puts 
+    call clearall ; clears password in memory
 
+    mov AX, 0 ; successful!
     mov [needs_reboot], byte 1
-
     ret
 abort:
-    mov AX, msg_abort
+    ; Recover from error by clearing ST and setting ST
+    mov EAX, [ES:EBX+HBA_PORT.cmd]
+    and EAX, ~(1<<0) ; set ST = Start
+    mov [ES:EBX+HBA_PORT.cmd], EAX
+    or EAX, (1<<0) ; set ST = Start
+    mov [ES:EBX+HBA_PORT.cmd], EAX
 
-    call puts
+    call clearall ; clears password in memory
 
 
+    mov AX, 1 ; wrong password!
     ret
 
 
@@ -382,8 +319,6 @@ hexdump_loop:
     ret
 
 issue_command:
-    mov AX, msg_issuing
-    call puts
     ; Set CI bit 0
     mov [ES:EBX+HBA_PORT.ci], dword 1
     
@@ -392,8 +327,6 @@ wait_ci:
     test EAX, 1
     jnz wait_ci
     ; command completed
-    mov AX, msg_complete
-    call puts
     ret
 
 clearall:
@@ -422,8 +355,8 @@ identify_strbuf: times 40+1 db 0x00 ; null terminated string
 ; allocated in main.asm
 
 msg_port db `AHCI Port \0`
-msg_issuing db `Issuing...\0`
-msg_complete db `complete!\n\0`
+msg_notlocked db `not locked\n\0`
+msg_locked db `locked\n\0`
 msg_ahci_check_now db `Will start AHCI check now.\n\0`
 err_port_not_idle db `Port not idle.\n\0`
 err_ahci_sncq db `AHCI: SNCQ not set.\n\0`

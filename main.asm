@@ -31,100 +31,38 @@ pci_data_structure_end:
 start:
     push CS
     pop DS
+    
+    ;call pause
+
+    call cls
 
 ;    mov BP, SP
 
 ;again:
-;    call cls
 ;    call pw_dialog
 ;    call cls
 ;    call wrong_password_error_box
+;    call cls
 ;    jmp again
 ;    retf
 
-    ; Detect POST memory manager
-    ; --------------------------
+%include "pmm.asm"
 
-    mov AX, 0xE000
-    mov ES, AX
-pmm_detection_loop:
-    mov EBX, [ES:0]
-    cmp EBX, 0x4d4d5024
-    jz pmm_detected
-    inc AX
-    mov ES, AX
-    jnz pmm_detection_loop
-
-    mov AX, err_no_pmm
-    call puts
-    call pause
-    retf
-
-pmm_detected:
-
-    ; calculate checksum
-    mov BX, 0 ; offset
-    mov CL, 0 ; checksum comes here
-    mov AL, [ES:05h] ; length
-
-pmm_sum:
-    add CL, [ES:BX]
-    inc BL
-    cmp BL, AL
-    jl pmm_sum
-
-    cmp CL, 0
-    jz pmm_sum_success
-
-    mov AX, err_pmm_chksum
-    call puts
-    call pause
-    retf
-
-pmm_sum_success:
-
-    ; save entry point - our PMM interfe far function pointer
-    mov AX, [ES:07h]    
-    mov [pmm_entry_point], AX
-    mov AX, [ES:07h+2]    
-    mov [pmm_entry_point+2], AX
-
-    mov AX, 0
-    mov ES, AX ; now we can use ES for 32 bit physical adressing
-
-    ; Allocate memory
-    ; ---------------
-    mov EAX, 1024/16
-    call pmm_alloc_paragraphs
-    mov [cmd_list], EAX
-
-    mov EAX, 256/16
-    call pmm_alloc_paragraphs
-    mov [cmd_table], EAX
-
-    mov EAX, 4096/16
-    call pmm_alloc_paragraphs
-    mov [fis_recv], EAX
-
-    mov EAX, 512/16
-    call pmm_alloc_paragraphs
-    mov [ahci_data_buf], EAX
-    
 %include "abar.asm"
 
 %include "ahci.asm"
 
     ; End of program
     ; --------------
-    mov AX, end_msg
-    call puts
+    ;mov AX, end_msg
+    ;call puts
 
-    mov AX, [needs_reboot]
-    cmp AX, 0
+    mov AL, [needs_reboot]
+    cmp AL, 0
     jz no_reboot 
-    mov AX, end_msg_rb
-    call puts
-    call pause
+    ;mov AX, end_msg_rb
+    ;call puts
+    ;call pause
 
     ; Reboot
     ; ------
@@ -169,7 +107,6 @@ pmm_sum_success:
 ;}
 
 no_reboot:
-    call pause
     retf
 
 
@@ -227,7 +164,6 @@ err_abar db `Failed to read ABAR\n\0`
 err_no_pmm db `PMM not present\n\0`
 err_pmm_alloc db `PMM alloc failed\n\0`
 err_pmm_chksum db `PMM checksum mismatch\n\0`
-hddtest db `TESTHDDSTRING 1234\0`
 
 abar dd 0x00000000 ; save ABAR here
 pmm_entry_point dw 0x0000, 0x0000 ; save PMM entry point here

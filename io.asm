@@ -4,6 +4,7 @@
 window_width equ 46
 
 pw_dialog:
+    pusha
     mov [cur_style], byte 0x1F ; white on blue
 
     mov [horiz_line_left], byte 0xB3 ; vertical line
@@ -57,7 +58,7 @@ pw_dialog:
     mov AH, 02h ; set cursor position
     int 10h
 
-    mov AX, hddtest
+    mov AX, identify_strbuf
     call puts
 
     mov DH, 15
@@ -68,6 +69,8 @@ pw_dialog:
     call puts
 
     mov DI, 0
+    mov ECX, [ahci_data_buf]
+    add ECX, 2 ; the password field for SECURITY UNLOCK is now at ES:ECX
 pw_dialog_loop:
     call getc 
     
@@ -77,33 +80,39 @@ pw_dialog_loop:
     cmp AL, `\b`
     jz pw_dialog_backspace
 
-    cmp DI, 32
+    cmp EDI, 32
     jnz pw_addchar_ok
     jmp pw_dialog_loop ; too long
 
 pw_addchar_ok:
+    mov [ES:ECX+EDI], AL
+
     mov AL, '*'
     call putc
-    inc DI
+
+    inc EDI
 
     jmp pw_dialog_loop
 pw_dialog_backspace:
-    cmp DI, 0
+    cmp EDI, 0
     jnz pw_delchar_ok
     jmp pw_dialog_loop ; already empty buffer
     
 pw_delchar_ok:
+    mov [ES:ECX+EDI], byte 0
     call backspace
-    dec DI
+    dec EDI
 
     jmp pw_dialog_loop
 pw_dialog_end_loop: 
 
     mov [cur_style], byte 0x07 ; grey on black
 
+    popa
     ret    
 
 wrong_password_error_box:
+    pusha
     mov [cur_style], byte 0x4F ; white on red
 
     mov [horiz_line_left], byte 0xB3 ; vertical line
@@ -144,19 +153,19 @@ wait_return:
 
     
     mov [cur_style], byte 0x07 ; grey on black
+    popa
+    ret
 
 cls:
     pusha
-    mov AH, 02h ; set cursor position
-    mov DX, 0
+    mov AH, 06h
+    mov AL, 0
+    mov BH, 07h
+    mov CH, 0
+    mov CL, 0
+    mov DH, 24
+    mov DL, 79
     int 10h
-
-    mov BX, 80*25
-    mov AX, ' '
-cls_loop:
-    call putc
-    dec BX
-    jnz cls_loop
     popa
     ret
     
