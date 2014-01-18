@@ -98,7 +98,7 @@ pmm_sum_success:
 
     mov EAX, 512/16
     call pmm_alloc_paragraphs
-    mov [result_buf], EAX
+    mov [ahci_data_buf], EAX
     
 %include "abar.asm"
 
@@ -109,6 +109,8 @@ pmm_sum_success:
 
     ; End of program
     ; --------------
+    mov AX, end_msg
+    call puts
     call pause
     retf
 
@@ -154,6 +156,7 @@ memclear_loop:
     
     ; Strings
 hello_msg db `ahci_sbe v. 0.2\n\0`
+end_msg db `==== END ====\n\0`
 pause_msg db `Press any key to continue...\n\0`
 
 err_no_pci db `PCI not present\n\0`

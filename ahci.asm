@@ -58,6 +58,7 @@ ahci_port_loop:
     call puts
     mov AL, CL
     call putbyte
+    call nl
 
     
     push CX
@@ -73,9 +74,8 @@ ahci_port_loop:
     pop CX
     
 
-ahci_end_port:
-    call nl
     call pause
+ahci_end_port:
     inc CL
     cmp CL, 32
     jl ahci_port_loop
@@ -87,8 +87,27 @@ ahci_end_port:
     ; -------------------
 
 check_port:
-    mov EAX, EBX
-    call putdword
+    
+    ; Is a device attached and PHY ready?
+    mov EAX, [ES:EBX+HBA_PORT.ssts]
+    and EAX, 0xF
+    cmp EAX, 3
+    je check_port_det_ok
+
+    mov AX, msg_no_device_attached
+    call puts
+    ret
+check_port_det_ok:
+
+    ; Is it an ATA device?
+    mov EAX, [ES:EBX+HBA_PORT.sig]
+    cmp EAX, 0x101
+    je check_port_sig_ok 
+
+    mov AX, msg_no_ata_device
+    call puts
+    ret
+check_port_sig_ok:
 
     ;2. Ensure that PxCMD.ST = ‘0’, PxCMD.CR = ‘0’, PxCMD.FRE = ‘0’, PxCMD.FR = ‘0’
     mov EAX, [ES:EBX+HBA_PORT.cmd]
@@ -100,37 +119,16 @@ check_port:
     ret
 check_port_cmd_ok:
 
-    mov [ES:EBX+HBA_PORT.serr], dword 0b00000111111111110000111100000011 ; reset all implemented interrupt bits
-    
-    mov EAX, [ES:EBX+HBA_PORT.ssts]
-    and EAX, 0xF
-    cmp EAX, 3
-    je check_port_det_ok
-
-    mov AX, msg_no_device_attached
-    call puts
-    ret
-check_port_det_ok:
-
-    mov EAX, [ES:EBX+HBA_PORT.sig]
-    cmp EAX, 0x101
-    je check_port_sig_ok 
-
-    mov AX, msg_no_ata_device
-    call puts
-    ret
-check_port_sig_ok:
-
+    ; Reset all implemented interrupt bits
+    mov [ES:EBX+HBA_PORT.serr], dword 0b00000111111111110000111100000011 
 
     ; Link command list (consists of one command header) to port
-
     mov [ES:EBX+HBA_PORT.clbu], dword 0 
     mov EAX, [cmd_list]
     mov [ES:EBX+HBA_PORT.clb], EAX
     mov EAX, [fis_recv]
     mov [ES:EBX+HBA_PORT.fb], EAX
     
-
     ; Start port
     mov EAX, [ES:EBX+HBA_PORT.cmd]
     or EAX, (1<<4) ; set FRE = FIS receive enable
@@ -146,6 +144,16 @@ wait_fr:
     mov [ES:EBX+HBA_PORT.cmd], EAX
 
     call identify
+    call identify_info
+    call identify
+    call identify_info
+    call is_locked
+    cmp AX, 0
+    jz not_locked
+    call unlock
+not_locked:
+
+
 
     ; Stop port
     mov EAX, [ES:EBX+HBA_PORT.cmd]
@@ -164,20 +172,7 @@ wait_fr:
     ; Issue ATA IDENTIFY
     ; ------------------
 identify:
-    ; Clear command list
-    mov ECX, [cmd_list]
-    mov AX, 32
-    call memclear
-    
-    ; Clear result buffer
-    mov ECX, [result_buf]
-    mov AX, 512
-    call memclear
-
-    ; Clear command tablo
-    mov ECX, [cmd_table]
-    mov AX, 256
-    call memclear
+    call clearall
 
     mov ECX, [cmd_list]
     mov [ES:ECX+HBA_CMD_HEADER.flags], word 0|5 ; w=0, cfl=20/4
@@ -187,44 +182,168 @@ identify:
     mov [ES:ECX+HBA_CMD_HEADER.ctba], EAX
 
     mov ECX, [cmd_table]
-    ;mov [ES:ECX+0], byte 0x27 ; fis->fis_type = FIS_TYPE_REG_H2D
-    ;mov [ES:ECX+1], byte (1<<7) ; fis->c = 1
-    ;mov [ES:ECX+2], byte 0xEC ; fis->command = ATA_CMD_IDENTIFY; 
-    ; fis->device = 0
+    ; fis type = RegH2D => 0x27; c = 1 => 0xF0; command = IDENTIFY => 0xEC
     mov [ES:ECX], dword 0x00ECF027
 
     add ECX, 128 ; goto first prdt entry
-    mov EAX, [result_buf]
+    mov EAX, [ahci_data_buf]
+    mov [ES:ECX], EAX ; address
+    mov [ES:ECX+12], dword 512-1 ; count ?!?
+
+    call issue_command
+    ret
+
+identify_info:
+    mov ECX, [ahci_data_buf]
+    add ECX, 27*2 ; model number offset
+    mov DX, 20 ; 20 words = 40 ascii chars
+    call fill_identify_strbuf
+    mov AX, identify_strbuf
+    call puts
+    call nl
+
+
+    mov ECX, [ahci_data_buf]
+    mov AX, [ES:ECX+82*2]
+    and AX, (1<<1)
+    jnz security_supported ; Bit "Security mode feature set supported?". Maybe "Security mode feature set enabled" is also relevant?
+    mov AX, msg_no_security
+    call puts
+    ret
+
+security_supported:
+
+    ; Debug: print security status
+    ; ----------------------------
+
+    mov AX, [ES:ECX+128*2]
+    test AX, (1<<4)
+    jz skip_count_expired
+    push AX
+    mov AX, info_count_expired
+    call puts
+    pop AX
+skip_count_expired:
+    test AX, (1<<3)
+    jz skip_frozen
+    push AX
+    mov AX, info_frozen
+    call puts
+    pop AX
+skip_frozen:
+    test AX, (1<<2)
+    jz skip_locked
+    push AX
+    mov AX, info_locked
+    call puts
+    pop AX
+skip_locked:
+    test AX, (1<<1)
+    jz skip_enabled
+    push AX
+    mov AX, info_enabled
+    call puts
+    pop AX
+skip_enabled:
+    test AX, (1<<0)
+    jz skip_supported
+    push AX
+    mov AX, info_supported
+    call puts
+    pop AX
+skip_supported:
+    ret
+    
+    ; Should we ask for a password?
+    ; -----------------------------
+is_locked:
+    test AX, (1<<3)|(1<<4)
+    jz not_frozen_or_count_expired
+    mov AX, 0
+    ret
+not_frozen_or_count_expired:
+    and AX, (1<<0)|(1<<1)|(1<<2)
+    cmp AX, (1<<0)|(1<<1)|(1<<2)
+    jz supported_enabled_and_locked
+    mov AX, 0
+    ret
+supported_enabled_and_locked:
+    mov AX, 1
+    ret
+
+    ; We need to issue SECURITY UNLOCK
+    ; --------------------------------
+unlock:
+    call clearall
+
+    mov ECX, [ahci_data_buf]
+    
+    ; Control word is 0 (already cleared) => only user password support
+
+    ; Copy password
+    add ECX, 2 ; password offset
+    push EBX
+    mov DX, 16 ; # words left to copy
+    mov BX, pw_test
+
+copy_password:
+    mov AX, [BX]
+    xchg AL, AH
+    mov [ES:ECX], AX
+
+    add ECX, 2
+    add BX, 2
+    
+    dec DX
+    jnz copy_password
+     
+    pop EBX
+
+
+    mov ECX, [cmd_list]
+    mov [ES:ECX+HBA_CMD_HEADER.flags], word (1<<6)|5 ; w=1, cfl=20/4 (RegH2D)
+    mov [ES:ECX+HBA_CMD_HEADER.prdtl], word 1
+
+    mov EAX, [cmd_table]
+    mov [ES:ECX+HBA_CMD_HEADER.ctba], EAX
+
+    mov ECX, [cmd_table]
+    ; fis type = RegH2D => 0x27; c = 1 => 0xF0; command = IDENTIFY => 0xF2
+    mov [ES:ECX], dword 0x00F2F027
+
+    add ECX, 128 ; goto first prdt entry
+    mov EAX, [ahci_data_buf]
     mov [ES:ECX], EAX ; address
     mov [ES:ECX+12], dword 512-1 ; count ?!?
 
     mov AX, msg_issuing
     call puts
-    call pause
 
-    ;mov DX, 256
-    ;mov ECX, [cmd_table]
-    ;call hexdump 
+    mov [ES:EBX+HBA_PORT.is], dword 0 ; reset all interrupts
+    mov EDX, 0
 
     ; Set CI bit 0
     mov [ES:EBX+HBA_PORT.ci], dword 1
     
-wait_ci:
+wait_unlock:
+    mov EAX, [ES:EBX+HBA_PORT.is]
+    cmp EAX, EDX
+    jz no_is_change
+    call putdword 
+    mov EDX, EAX
+no_is_change:
+
     mov EAX, [ES:EBX+HBA_PORT.ci]
     test EAX, 1
-    jnz wait_ci
-    call pause
+    jnz wait_unlock
+    ; command completed
 
-    ; Output IDENTIFY result
-    mov DX, 512
-    mov ECX, [result_buf]
-    call hexdump 
+    mov AX, msg_unlock_completed
+    call puts 
 
-    add ECX, 27*2 ; model number offset
-    mov DX, 20 ; 20 words = 40 ascii chars
-    call fill_identify_strbuf
-
-    mov AX, identify_strbuf
+    ret
+abort:
+    mov AX, msg_pxis_ifs_set
     call puts
 
 
@@ -263,21 +382,67 @@ hexdump_loop:
     pop AX
     ret
 
+issue_command:
+    mov AX, msg_issuing
+    call puts
+    ; Set CI bit 0
+    mov [ES:EBX+HBA_PORT.ci], dword 1
+    
+wait_ci:
+    mov EAX, [ES:EBX+HBA_PORT.ci]
+    test EAX, 1
+    jnz wait_ci
+    ; command completed
+    mov AX, msg_complete
+    call puts
+    ret
+
+clearall:
+    ; Clear command list
+    mov ECX, [cmd_list]
+    mov AX, 32
+    call memclear
+    
+    ; Clear result buffer
+    mov ECX, [ahci_data_buf]
+    mov AX, 512
+    call memclear
+
+    ; Clear command tablo
+    mov ECX, [cmd_table]
+    mov AX, 256
+    call memclear
+    ret
+
 
 cmd_list: dd 0x00000000 ; 32 bytes, 1K aligned
 cmd_table: dd 0x00000000 ; 128 + 16 byte PRDT => 256 byte alloc, 128 byte aligned
 fis_recv: dd 0x00000000 ; 256 bytes, 256 byte aligned --> wir nehmen lieber mal 4K, keine ahnung
-result_buf: dd 0x00000000 ; 512 bytes, 2 byte aligned
+ahci_data_buf: dd 0x00000000 ; 512 bytes, 2 byte aligned
 identify_strbuf: times 40+1 db 0x00 ; null terminated string
 ; allocated in main.asm
 
 msg_port db `AHCI Port \0`
-msg_issuing db `Issuing...\n\0`
+msg_issuing db `Issuing...\0`
+msg_complete db `complete!\n\0`
 msg_ahci_check_now db `Will start AHCI check now.\n\0`
 err_port_not_idle db `Port not idle.\n\0`
 err_ahci_sncq db `AHCI: SNCQ not set.\n\0`
 err_ahci_ae db `AHCI: GHC.AE not set.\n\0`
 msg_no_device_attached db `No device attached\n\0`
 msg_no_ata_device db `No ATA device\n\0`
+msg_no_security db `Security mode feature set not supported\n\0`
+msg_unlock_completed db `UNLOCK completed\n\0`
+msg_pxis_ifs_set db `PxIS.IFS set\n\0`
+
+pw_test:
+    db "test123"
+    times 32-7 db 0 ; padding
+
+info_count_expired db `count expired \0`
+info_frozen db `frozen \0`
+info_locked db `locked \0`
+info_enabled db `enabled \0`
+info_supported db `supported \0`
 
 skip_data:
