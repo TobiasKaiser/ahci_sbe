@@ -32,6 +32,16 @@ start:
     push CS
     pop DS
 
+;    mov BP, SP
+
+;again:
+;    call cls
+;    call pw_dialog
+;    call cls
+;    call wrong_password_error_box
+;    jmp again
+;    retf
+
     ; Detect POST memory manager
     ; --------------------------
 
@@ -102,16 +112,13 @@ pmm_sum_success:
     
 %include "abar.asm"
 
-    mov AX, hello_msg
-    call puts
-
 %include "ahci.asm"
 
     ; End of program
     ; --------------
     mov AX, end_msg
     call puts
-    retf
+
     mov AX, [needs_reboot]
     cmp AX, 0
     jz no_reboot 
@@ -161,8 +168,6 @@ pmm_sum_success:
 ;    goto loop; /* But if a non maskable interrupt is received, halt again */
 ;}
 
-
-
 no_reboot:
     call pause
     retf
@@ -208,10 +213,13 @@ memclear_loop:
 %include "io.asm"
     
     ; Strings
-hello_msg db `ahci_sbe v. 0.2\n\0`
+version_str db `ahci_sbe v. 0.3\0`
 end_msg db `==== END ====\n\0`
 end_msg_rb db `Will reboot now!\n\0`
 pause_msg db `Press any key to continue...\n\0`
+pw_dialog_msg db `Enter password to unlock device:\0`
+pw_dialog_prompt db `Password: \0`
+wrong_password_msg db `Wrong password. Press return to try again.\0`
 
 err_no_pci db `PCI not present\n\0`
 err_no_ahci db `AHCI not present\n\0`
@@ -219,10 +227,16 @@ err_abar db `Failed to read ABAR\n\0`
 err_no_pmm db `PMM not present\n\0`
 err_pmm_alloc db `PMM alloc failed\n\0`
 err_pmm_chksum db `PMM checksum mismatch\n\0`
+hddtest db `TESTHDDSTRING 1234\0`
 
 abar dd 0x00000000 ; save ABAR here
 pmm_entry_point dw 0x0000, 0x0000 ; save PMM entry point here
 needs_reboot db 0 ; set to 1 if we need reboot
+cur_style db 0x07 ; grey on black = default
+
+horiz_line_left db 0
+horiz_line_middle db 0
+horiz_line_right db 0
 
 
     db 0 ; reserve at least one byte for checksum

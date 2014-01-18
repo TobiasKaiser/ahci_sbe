@@ -1,6 +1,6 @@
 SRC=main.asm io.asm ahci.asm ahci_defs.asm
 
-do: flash
+#do: flash
 
 all: ahci_sbe.qemu.rom ahci_sbe.vbox.rom ahci_sbe.realtek.rom
 

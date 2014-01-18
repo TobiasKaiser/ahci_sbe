@@ -434,9 +434,7 @@ msg_no_security db `Security mode feature set not supported\n\0`
 msg_unlock_completed db `UNLOCK completed\n\0`
 msg_abort db `aborted!\n\0`
 
-pw_test:
-    db "test123"
-    times 32-7 db 0 ; padding
+pw_test: times 32 db 0 ; we can do this direct => test!
 
 info_count_expired db `count expired \0`
 info_frozen db `frozen \0`

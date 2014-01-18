@@ -1,3 +1,200 @@
+    ; Password dialog
+    ; ---------------
+
+window_width equ 46
+
+pw_dialog:
+    mov [cur_style], byte 0x1F ; white on blue
+
+    mov [horiz_line_left], byte 0xB3 ; vertical line
+    mov [horiz_line_middle], byte 0x20 ; space
+    mov [horiz_line_right], byte 0xB3 ; vertical line
+    mov DH, 8 ; line number
+    call horiz_line
+    mov DH, 9 ; line number
+    call horiz_line
+    mov DH, 10 ; line number
+    call horiz_line
+    mov DH, 11 ; line number
+    call horiz_line
+    mov DH, 12 ; line number
+    call horiz_line
+    mov DH, 14 ; line number
+    call horiz_line
+    mov DH, 15 ; line number
+    call horiz_line
+    mov DH, 16 ; line number
+    call horiz_line
+
+    mov [horiz_line_middle], byte 0xC4 ; horizontal lines following
+
+    mov [horiz_line_left], byte 0xDA ; top left corner
+    mov [horiz_line_right], byte 0xBF ; top right corner
+    mov DH, 7 ; line number
+    call horiz_line
+
+
+    mov [horiz_line_left], byte 0xC3 ; |-
+    mov [horiz_line_right], byte 0xB4 ; -|
+    mov DH, 13 ; line number
+    call horiz_line
+
+    mov [horiz_line_left], byte 0xC0 ; bottom left corner
+    mov [horiz_line_right], byte 0xD9 ; bottom right corner
+    mov DH, 17 ; line number
+    call horiz_line
+
+    mov DL, (80-window_width)/2+2
+
+    mov DH, 9
+    mov AH, 02h ; set cursor position
+    int 10h
+
+    mov AX, pw_dialog_msg
+    call puts
+    
+    mov DH, 11
+    mov AH, 02h ; set cursor position
+    int 10h
+
+    mov AX, hddtest
+    call puts
+
+    mov DH, 15
+    mov AH, 02h ; set cursor position
+    int 10h
+    
+    mov AX, pw_dialog_prompt
+    call puts
+
+    mov DI, 0
+pw_dialog_loop:
+    call getc 
+    
+    cmp AL, `\r`
+    jz pw_dialog_end_loop
+
+    cmp AL, `\b`
+    jz pw_dialog_backspace
+
+    cmp DI, 32
+    jnz pw_addchar_ok
+    jmp pw_dialog_loop ; too long
+
+pw_addchar_ok:
+    mov AL, '*'
+    call putc
+    inc DI
+
+    jmp pw_dialog_loop
+pw_dialog_backspace:
+    cmp DI, 0
+    jnz pw_delchar_ok
+    jmp pw_dialog_loop ; already empty buffer
+    
+pw_delchar_ok:
+    call backspace
+    dec DI
+
+    jmp pw_dialog_loop
+pw_dialog_end_loop: 
+
+    mov [cur_style], byte 0x07 ; grey on black
+
+    ret    
+
+wrong_password_error_box:
+    mov [cur_style], byte 0x4F ; white on red
+
+    mov [horiz_line_left], byte 0xB3 ; vertical line
+    mov [horiz_line_middle], byte 0x20 ; space
+    mov [horiz_line_right], byte 0xB3 ; vertical line
+    mov DH, 11 ; line number
+    call horiz_line
+    mov DH, 12 ; line number
+    call horiz_line
+    mov DH, 13 ; line number
+    call horiz_line
+
+    mov [horiz_line_middle], byte 0xC4 ; horizontal lines following
+
+    mov [horiz_line_left], byte 0xDA ; top left corner
+    mov [horiz_line_right], byte 0xBF ; top right corner
+    mov DH, 10 ; line number
+    call horiz_line
+
+    mov [horiz_line_left], byte 0xC0 ; bottom left corner
+    mov [horiz_line_right], byte 0xD9 ; bottom right corner
+    mov DH, 14 ; line number
+    call horiz_line
+
+    mov DL, (80-window_width)/2+2
+
+    mov DH, 12
+    mov AH, 02h ; set cursor position
+    int 10h
+
+    mov AX, wrong_password_msg
+    call puts
+
+wait_return:
+    call getc
+    cmp AL, `\r`
+    jnz wait_return
+
+    
+    mov [cur_style], byte 0x07 ; grey on black
+
+cls:
+    pusha
+    mov AH, 02h ; set cursor position
+    mov DX, 0
+    int 10h
+
+    mov BX, 80*25
+    mov AX, ' '
+cls_loop:
+    call putc
+    dec BX
+    jnz cls_loop
+    popa
+    ret
+    
+
+horiz_line: ; DH is line number, chars are [horiz_line_(left|middle|right)]
+    mov AH, 09h
+    mov BL, [cur_style]
+    mov BH, 0 ; page number
+    mov CX, 1 ; count
+
+    mov DL, (80-window_width)/2
+
+    mov AH, 02h ; set cursor position
+    int 10h
+
+    mov AH, 09h ; print char
+    mov AL, [horiz_line_left]
+    int 10h
+
+pw_top_line_loop:
+    inc DL
+    cmp DL, 80 - (80-window_width)/2 - 1
+    mov AH, 02h ; set cursor position
+    int 10h
+    jz pw_end_top_line
+
+    mov AH, 09h ; print char
+    mov AL, [horiz_line_middle]
+    int 10h
+    jmp pw_top_line_loop
+pw_end_top_line:
+    mov AH, 09h ; print char
+    mov AL, [horiz_line_right]
+    int 10h
+    ret
+
+    ; Basic user interaction procedures
+    ; ---------------------------------
 nl:
     push AX
     mov AL, `\n`
@@ -75,11 +272,29 @@ putnibble_endfork:
     call putc
     ret
 
+backspace:
+    pusha
+
+    mov AH, 03h ; get cursor position
+    mov BH, 0 ; page number
+    int 10h
+    sub DL, 1
+    mov AH, 02h ; set cursor position
+    int 10h
+
+    mov AH, 09h
+    mov AL, ' '
+    mov BL, [cur_style]
+    mov BH, 0 ; page number
+    mov CX, 1 ; count
+    int 10h
+
+    popa
+    ret
+    
+
 putc: 
-    push AX
-    push BX
-    push CX
-    push DX
+    pusha
 
     cmp AL, `\n`
     jz putc_nl
@@ -87,9 +302,10 @@ putc:
     cmp AL, `\r`
     jz putc_nl
 
+
     jmp putc_print_char
 
-putc_nl: ; print char
+putc_nl:
     mov AH, 03h ; get cursor position
     mov BH, 0 ; page number
     int 10h
@@ -99,7 +315,7 @@ putc_nl: ; print char
 putc_print_char:
     mov AH, 09h
     mov AL, AL ; character
-    mov BL, 07h 
+    mov BL, [cur_style]
     mov BH, 0 ; page number
     mov CX, 1 ; count
     int 10h
@@ -135,8 +351,5 @@ putc_set_cursor:
     mov AH, 02h ; set cursor position
     int 10h
 
-    pop DX
-    pop CX
-    pop BX
-    pop AX
+    popa
     ret
