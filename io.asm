@@ -1,3 +1,32 @@
+; io.asm -- User interface functions via BIOS
+;
+; This file is part of ahci_sbe.
+;
+; Copyright (C) 2014, Tobias Kaiser <mail@tb-kaiser.de>
+; All rights reserved.
+; 
+; Redistribution and use in source and binary forms, with or without 
+; modification, are permitted provided that the following conditions are met:
+; 
+; 1. Redistributions of source code must retain the above copyright notice, this
+; list of conditions and the following disclaimer.
+; 
+; 2. Redistributions in binary form must reproduce the above copyright notice, 
+; this list of conditions and the following disclaimer in the documentation 
+; and/or other materials provided with the distribution.
+; 
+; THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" 
+; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE 
+; IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE 
+; DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE 
+; FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL 
+; DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR 
+; SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER 
+; CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, 
+; OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE 
+; OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+
     ; Password dialog
     ; ---------------
 
@@ -5,6 +34,7 @@ window_width equ 46
 
 pw_dialog:
     pusha
+
     mov [cur_style], byte 0x1F ; white on blue
 
     mov [horiz_line_left], byte 0xB3 ; vertical line
@@ -111,6 +141,9 @@ pw_dialog_end_loop:
     popa
     ret    
 
+    ; Error box: Wrong password
+    ; -------------------------
+
 wrong_password_error_box:
     pusha
     mov [cur_style], byte 0x4F ; white on red
@@ -156,8 +189,8 @@ wait_return:
     popa
     ret
 
-cls:
-    pusha
+cls_blank:
+    ; Clear screen
     mov AH, 06h
     mov AL, 0
     mov BH, 07h
@@ -166,6 +199,37 @@ cls:
     mov DH, 24
     mov DL, 79
     int 10h
+
+    ; Move cursor to 0, 0
+    mov DL, 0
+    mov DH, 0
+    mov BH, 0 ; page number
+    mov AH, 02h ; set cursor position
+    int 10h
+
+    ret
+
+cls:
+    pusha
+    call cls_blank
+
+    ; Print version info at bottom
+    mov DL, 0
+    mov DH, 24
+    mov BH, 0 ; page number
+    mov AH, 02h ; set cursor position
+    int 10h
+
+    mov AX, version_str
+    call puts
+
+    ; Move cursor to 0, 0
+    mov DL, 0
+    mov DH, 0
+    mov BH, 0 ; page number
+    mov AH, 02h ; set cursor position
+    int 10h
+
     popa
     ret
     

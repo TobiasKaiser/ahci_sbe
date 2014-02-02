@@ -1,5 +1,131 @@
-%include "ahci_defs.asm"
+; ahci.asm -- Interaction with the AHCI controller for ATA SECURITY UNLOCK
+;
+; This file is part of ahci_sbe.
+;
+; Copyright (C) 2014, Tobias Kaiser <mail@tb-kaiser.de>
+; All rights reserved.
+; 
+; Redistribution and use in source and binary forms, with or without 
+; modification, are permitted provided that the following conditions are met:
+; 
+; 1. Redistributions of source code must retain the above copyright notice, this
+; list of conditions and the following disclaimer.
+; 
+; 2. Redistributions in binary form must reproduce the above copyright notice, 
+; this list of conditions and the following disclaimer in the documentation 
+; and/or other materials provided with the distribution.
+; 
+; THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" 
+; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE 
+; IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE 
+; DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE 
+; FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL 
+; DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR 
+; SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER 
+; CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, 
+; OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE 
+; OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+    ; Find AHCI controller via BIOS
+    ; -----------------------------
+find_ahci:
+
+    ; Step 1: Does the BIOS support PCI?
+
+    mov AX, 0b101h
+    int 1ah
+    ;cmp DX, 4350h ; "CP" from "PCI"
+    cmp EDX, 20494350h ; " ICP"?!?
+    jz pci_present
+
+    mov AX, err_no_pci
+    jmp fatal_error
+
+pci_present:
+
+    ; Step 2: Find the AHCI/SATA controller
+    ; (class id 01h, subclass id 06h, prog-if 01h)
+
+    mov AX, 0b103h ; find pci class code
+    mov ECX, 010601h
+    mov SI, 0 ; find only first device.
+    ; must be repeated with SI=1,2... to support multiple ahcis
+    int 1ah
+    jnc ahci_present
+
+    mov AX, err_no_ahci
+    jmp fatal_error
+
+ahci_present:
+
+    ; BL/HL is now bus number, device/function number
+    ; now we need the HBA (host bus adapter), referenced by ABAR (AHCI Base 
+    ; Memory Register), which is BAR[5]=PCI header offset 24h.
+    ; we get that from the bios, by which BL/BH is already set accordingly
+    mov AX, 0b10ah ; read configuration dword
+    mov DI, 24h
+    int 1ah
+    jnc abar_success
+
+    mov AX, err_abar
+    jmp fatal_error
+
+abar_success:
+    mov [abar], ECX
+    ret
+
+    ; AHCI data structures - See AHCI documentation
+    ; ---------------------------------------------
+struc HBA
+    .cap: resd 1
+    .ghc: resd 1
+    .is: resd 1
+    .pi: resd 1
+    .vs: resd 1
+    .ccc_ctl: resd 1
+    .ccc_pts resd 1
+    .em_loc: resd 1
+    .em_ctl: resd 1
+    .cap2: resd 1
+    .bohc: resd 1
+    resb 0xA0 - 0x2C ; reserved
+    resb 0x100 - 0xA0 ; vendor specific
+    .ports: 
+endstruc
+
+struc HBA_PORT
+    .clb: resd 1
+    .clbu: resd 1
+    .fb: resd 1
+    .fbu: resd 1
+    .is: resd 1
+    .ie: resd 1
+    .cmd: resd 1
+    resd 1 ; reserved
+    .tfd: resd 1
+    .sig: resd 1
+    .ssts: resd 1
+    .sctl: resd 1
+    .serr: resd 1
+    .sact: resd 1
+    .ci: resd 1
+    .sntf: resd 1
+    .fbs: resd 1
+    resd 11 ; reserved
+    resd 4 ; vendor
+endstruc
+
+struc HBA_CMD_HEADER
+    .flags: resw 1
+    .prdtl: resw 1
+    .prdbc: resd 1
+    .ctba: resd 1
+    .ctbau: resd 1
+endstruc
+
+    ; AHCI main function for interactive unlocking of all locked devices
+    ; ------------------------------------------------------------------
+ahci_main:
     ; Clear fis_recv
     mov ECX, [fis_recv]
     mov AX, 256
@@ -22,8 +148,7 @@
     
 
     mov AX, err_ahci_ae
-    call puts
-    jmp $
+    call fatal_error
 ae_passed:
 
     mov EAX, [ES:EBX+HBA.cap]
@@ -31,10 +156,8 @@ ae_passed:
     jnz sncq_passed
 
     mov AX, err_ahci_sncq
-    call puts
-    jmp $
+    call fatal_error
 sncq_passed:
-
 
 
     ; AHCI: test every port loop
@@ -67,14 +190,12 @@ ahci_port_loop:
     pop EBX
     pop CX
     
-
 ahci_end_port:
     inc CL
     cmp CL, 32
     jl ahci_port_loop
+    ret
 
-
-    jmp skip_data
 
     ; Check port function
     ; -------------------
@@ -366,13 +487,3 @@ msg_no_ata_device db `No ATA device\n\0`
 msg_no_security db `Security mode feature set not supported\n\0`
 msg_unlock_completed db `UNLOCK completed\n\0`
 msg_abort db `aborted!\n\0`
-
-pw_test: times 32 db 0 ; we can do this direct => test!
-
-info_count_expired db `count expired \0`
-info_frozen db `frozen \0`
-info_locked db `locked \0`
-info_enabled db `enabled \0`
-info_supported db `supported \0`
-
-skip_data:

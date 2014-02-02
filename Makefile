@@ -1,4 +1,4 @@
-SRC=main.asm io.asm ahci.asm ahci_defs.asm
+SRC=main.asm io.asm ahci.asm pmm.asm
 
 do: flash
 

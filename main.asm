@@ -1,5 +1,34 @@
+; main.asm -- ahci_sbe main file generating PCI option ROM header structures, 
+; performing basic initialization, %includes all other asm source files
+;
+; This file is part of ahci_sbe.
+;
+; Copyright (C) 2014, Tobias Kaiser <mail@tb-kaiser.de>
+; All rights reserved.
+; 
+; Redistribution and use in source and binary forms, with or without 
+; modification, are permitted provided that the following conditions are met:
+; 
+; 1. Redistributions of source code must retain the above copyright notice, this
+; list of conditions and the following disclaimer.
+; 
+; 2. Redistributions in binary form must reproduce the above copyright notice, 
+; this list of conditions and the following disclaimer in the documentation 
+; and/or other materials provided with the distribution.
+; 
+; THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" 
+; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE 
+; IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE 
+; DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE 
+; FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL 
+; DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR 
+; SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER 
+; CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, 
+; OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE 
+; OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+
 org 0
-;rom_size_multiple_of equ 4096
 rom_size_multiple_of equ 512
 bits 16
     ; PCI Expansion Rom Header
@@ -31,108 +60,40 @@ pci_data_structure_end:
 start:
     push CS
     pop DS
-    
-    ;call pause
-
+    mov [sp_orig], SP
     call cls
 
-;    mov BP, SP
-
-;again:
-;    call pw_dialog
-;    call cls
-;    call wrong_password_error_box
-;    call cls
-;    jmp again
-;    retf
-
-%include "pmm.asm"
-
-%include "abar.asm"
-
-%include "ahci.asm"
-
-    ; End of program
-    ; --------------
-    ;mov AX, end_msg
-    ;call puts
+    call pmm_detect_and_alloc
+    call find_ahci
+    call ahci_main
 
     mov AL, [needs_reboot]
     cmp AL, 0
     jz no_reboot 
-    ;mov AX, end_msg_rb
-    ;call puts
-    ;call pause
+    call cls_blank
+    jmp 0xFFFF:0x0000 ; <-- reboot (so many possibilities)
 
-    ; Reboot
-    ; ------
-
-    jmp 0xFFFF:0x0000
-
-;    cli
-;reboot_loop:
-;    in AL, 0x64
-;    test AL, (1<<0)
-;    jz no_read_io
-;    mov AL, 0x60
-;no_read_io:
-;    in AL, 0x64
-;    test AL, (1<<1)
-;    jnz reboot_loop
-;    
-;    mov AL, 0xFE
-;    out 0x64, AL
-;halt:
-;    hlt
-;    jmp halt
-;    
-;void reboot()
-;{
-;    uint8_t temp;
-; 
-;    asm volatile ("cli"); /* disable all interrupts */
-; 
-;    /* Clear all keyboard buffers (output and command buffers) */
-;    do
-;    {
-;        temp = inb(KBRD_INTRFC); /* empty user data */
-;        if (check_flag(temp, KBRD_BIT_KDATA) != 0)
-;            inb(KBRD_IO); /* empty keyboard data */
-;    } while (check_flag(temp, KBRD_BIT_UDATA) != 0);
-; 
-;    outb(KBRD_INTRFC, KBRD_RESET); /* pulse CPU reset line */
-;    loop:
-;    asm volatile ("hlt"); /* if that didn't work, halt the CPU */
-;    goto loop; /* But if a non maskable interrupt is received, halt again */
-;}
-
-no_reboot:
-    retf
-
-
-pmm_alloc_paragraphs:
-    push word 0b111 ; Flags: Aligned, conventional or extended
-    push dword 0xFFFFFFFF ; anonymous allocation
-
-    push EAX; size in paragraphs
-    push 0x0000 ; function: allocate
-    call far [pmm_entry_point]
-    add sp, 12 ; clean up after C style function call
-    
-    xchg DX, AX
-    shl EAX, 16
-    mov AX, DX
-    cmp EAX, 0
-    je pmm_alloc_fail
-    ret
-
-pmm_alloc_fail:
-    mov AX, err_pmm_alloc
+fatal_error:
+    push AX
+    mov AX, fatal_error_msg
     call puts
-    call nl
-    jmp $ ; we cant retf here, since we would need a stack frame for that.
+    pop AX
+    call puts
+    call pause
 
+    mov SP, [sp_orig]
+no_reboot:
+    call cls_blank
+    retf ; <-- continue boot
 
+    ; ----
+
+%include "pmm.asm"
+%include "ahci.asm"
+%include "io.asm"
+    
+    ; memclear function
+    ; -----------------
 memclear: ; set AX bytes starting at ES:ECX to 0x00
     push AX
     push ECX
@@ -147,16 +108,18 @@ memclear_loop:
     pop AX
     ret
 
-%include "io.asm"
-    
     ; Strings
-version_str db `ahci_sbe v. 0.3\0`
-end_msg db `==== END ====\n\0`
-end_msg_rb db `Will reboot now!\n\0`
+    ; -------
+
+version_str db `ahci_sbe v. 0.4\0`
+fatal_error_msg db `Fatal error: \0`
 pause_msg db `Press any key to continue...\n\0`
 pw_dialog_msg db `Enter password to unlock device:\0`
 pw_dialog_prompt db `Password: \0`
 wrong_password_msg db `Wrong password. Press return to try again.\0`
+
+    ; Error messages
+    ; --------------
 
 err_no_pci db `PCI not present\n\0`
 err_no_ahci db `AHCI not present\n\0`
@@ -165,7 +128,11 @@ err_no_pmm db `PMM not present\n\0`
 err_pmm_alloc db `PMM alloc failed\n\0`
 err_pmm_chksum db `PMM checksum mismatch\n\0`
 
+    ; Global Variables
+    ; ----------------
+
 abar dd 0x00000000 ; save ABAR here
+sp_orig dw 0x0000 ; original stack pointer for returning in case of an error
 pmm_entry_point dw 0x0000, 0x0000 ; save PMM entry point here
 needs_reboot db 0 ; set to 1 if we need reboot
 cur_style db 0x07 ; grey on black = default
@@ -174,6 +141,9 @@ horiz_line_left db 0
 horiz_line_middle db 0
 horiz_line_right db 0
 
+
+    ; ROM padding, checksum needs to be added separately
+    ; --------------------------------------------------
 
     db 0 ; reserve at least one byte for checksum
 rom_end equ $-$$
