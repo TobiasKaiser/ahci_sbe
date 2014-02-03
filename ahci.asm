@@ -98,6 +98,12 @@ struc HBA_CMD_HEADER
     .ctbau: resd 1
 endstruc
 
+SECURITY_SUPPORTED equ (1<<0)
+SECURITY_ENABLED equ (1<<1)
+SECURITY_LOCKED equ (1<<2)
+SECURITY_FROZEN equ (1<<3)
+SECURITY_COUNT_EXPIRED equ (1<<4)
+
     ; AHCI main function for interactive unlocking of all locked devices
     ; ------------------------------------------------------------------
 ahci_main:
@@ -233,12 +239,11 @@ wait_fr:
     or EAX, (1<<0) ; set ST = Start
     mov [ES:EBX+HBA_PORT.cmd], EAX
 
+unlock_loop:
     call identify
     call is_locked
     cmp AX, 0
     jz not_locked
-
-unlock_loop:
 
     call unlock
     cmp AX, 0
@@ -300,19 +305,35 @@ identify:
 
     ret
 
-
     ; Should we ask for a password?
     ; -----------------------------
 is_locked:
     mov ECX, [ahci_data_buf]
     mov AX, [ES:ECX+128*2] ; Security word from IDENTIFY
-    test AX, (1<<3)|(1<<4)
-    jz not_frozen_or_count_expired
+    test AX, SECURITY_FROZEN
+    jz not_frozen
     mov AX, 0
     ret
-not_frozen_or_count_expired:
-    and AX, (1<<0)|(1<<1)|(1<<2)
-    cmp AX, (1<<0)|(1<<1)|(1<<2)
+
+not_frozen:
+    test AX, SECURITY_COUNT_EXPIRED
+    jz not_expired
+
+
+    mov AX, msg_device
+    call puts
+    mov AX, identify_strbuf
+    call puts
+    mov AX, msg_count_expired
+    call puts
+    call pause
+
+    mov AX, 0
+    ret
+
+not_expired:
+    and AX, SECURITY_SUPPORTED | SECURITY_ENABLED | SECURITY_LOCKED
+    cmp AX, SECURITY_SUPPORTED | SECURITY_ENABLED | SECURITY_LOCKED
     jz supported_enabled_and_locked
     mov AX, 0
     ret
@@ -320,16 +341,22 @@ supported_enabled_and_locked:
     mov AX, 1
     ret
 
+
+
     ; We need to issue SECURITY UNLOCK
     ; --------------------------------
 unlock:
     call clearall
 
-    call pw_dialog
+    call pw_dialog ; returns 1 on error, 0 on success
     call cls
+    cmp AX, 0
+    jz password_dialog_not_cancelled
+    mov AX, 0 ; pretend success
+    ret
+password_dialog_not_cancelled:
     
     ; Control word is 0 (already cleared) => only user password support
-
 
     mov ECX, [cmd_list]
     mov [ES:ECX+HBA_CMD_HEADER.flags], word (1<<6)|5 ; w=1, cfl=20/4 (RegH2D)
@@ -368,6 +395,8 @@ wait_unlock:
     mov [needs_reboot], byte 1
     ret
 abort:
+    mov [ES:EBX+HBA_PORT.is], dword (1<<30) ; reset TFES
+
     ; Recover from error by clearing ST and setting ST
     mov EAX, [ES:EBX+HBA_PORT.cmd]
     and EAX, ~(1<<0) ; set ST = Start
@@ -450,6 +479,8 @@ ahci_data_buf: dd 0x00000000 ; 512 bytes, 2 byte aligned
 identify_strbuf: times 40+1 db 0x00 ; null terminated string
 ; allocated in main.asm
 
+msg_device db `Device \0`
+msg_count_expired db `\nSecurity count expired. Do a cold boot to retry.\n\0`
 msg_port db `AHCI Port \0`
 msg_notlocked db `not locked\n\0`
 msg_locked db `locked\n\0`

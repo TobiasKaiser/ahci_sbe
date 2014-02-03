@@ -81,6 +81,9 @@ pw_dialog_loop:
     cmp AL, `\r`
     jz pw_dialog_end_loop
 
+    cmp AL, 0x1b ; escape key cancels password dialog and continues boot with locked hdd
+    jz pw_dialog_escape
+
     cmp AL, `\b`
     jz pw_dialog_backspace
 
@@ -101,6 +104,13 @@ pw_dialog_backspace:
     cmp EDI, 0
     jnz pw_delchar_ok
     jmp pw_dialog_loop ; already empty buffer
+
+pw_dialog_escape:
+    mov [cur_style], byte 0x07 ; grey on black
+    popa
+    mov AX, 1 ; dialog cancelled
+    ret
+
     
 pw_delchar_ok:
     mov [ES:ECX+EDI], byte 0
@@ -111,8 +121,8 @@ pw_delchar_ok:
 pw_dialog_end_loop: 
 
     mov [cur_style], byte 0x07 ; grey on black
-
     popa
+    mov AX, 0 ; success
     ret    
 
     ; Error box: Wrong password
