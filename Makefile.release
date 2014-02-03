@@ -1,0 +1,17 @@
+# Set the following two variables according to the network interface card's values
+# You can get the vendor id and device id  with "lspci -nn | grep 0200" (vendor id:device id)
+PCI_VENDOR_ID=0x8086
+PCI_DEVICE_ID=0x100E
+
+SRC=main.asm io.asm ahci.asm pmm.asm
+
+ahci_sbe.rom: $(SRC) addchecksum
+	nasm main.asm -fbin -o $@ -dPCI_VENDOR_ID=$(PCI_VENDOR_ID) -dPCI_DEVICE_ID=$(PCI_DEVICE_ID)
+	./addchecksum $@ || rm $@
+
+addchecksum: addchecksum.c
+	gcc -o $@ $< -Wall
+
+.PHONY: clean
+clean:
+	rm -rf addchecksum ahci_sbe.rom

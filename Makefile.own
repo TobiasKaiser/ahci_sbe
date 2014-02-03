@@ -5,7 +5,7 @@ do: flash
 all: ahci_sbe.qemu.rom ahci_sbe.vbox.rom ahci_sbe.realtek.rom
 
 flash: ahci_sbe.realtek.rom
-	usbcprog -t -p 2864 -w $<
+	usbcprog -d /dev/ttyACM1 -t -p 2864 -w $<
 
 ahci_sbe.qemu.rom: $(SRC) addchecksum
 	nasm main.asm -fbin -o $@ -dPCI_VENDOR_ID=0x8086 -dPCI_DEVICE_ID=0x100E
