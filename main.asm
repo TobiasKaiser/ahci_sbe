@@ -39,6 +39,12 @@ start:
     call cls
 
     call pmm_detect_and_alloc
+
+    mov AX, 0 ; first achi
+    call find_ahci
+    call ahci_main
+
+    mov AX, 1 ; second achi
     call find_ahci
     call ahci_main
 

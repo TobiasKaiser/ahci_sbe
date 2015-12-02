@@ -4,6 +4,7 @@
     ; Find AHCI controller via BIOS
     ; -----------------------------
 find_ahci:
+    push AX ; save index of ahci
 
     ; Step 1: Does the BIOS support PCI?
 
@@ -23,8 +24,7 @@ pci_present:
 
     mov AX, 0b103h ; find pci class code
     mov ECX, 010601h
-    mov SI, 0 ; find only first device.
-    ; must be repeated with SI=1,2... to support multiple ahcis
+    pop SI ; restore index of ahci, which was an argument passed from main in AX.
     int 1ah
     jnc ahci_present
 
