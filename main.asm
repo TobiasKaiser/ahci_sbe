@@ -60,6 +60,7 @@ loop_over_multiple_ahci_controllers_end:
     mov AL, [needs_reboot]
     cmp AL, 0
     jz no_reboot 
+    call clear_last_password
     call cls_blank
     jmp 0xFFFF:0x0000 ; <-- reboot (so many possibilities)
 
@@ -73,6 +74,7 @@ fatal_error:
 
     mov SP, [sp_orig]
 no_reboot:
+    call clear_last_password
     call cls_blank
     retf ; <-- continue boot
 
@@ -101,7 +103,7 @@ memclear_loop:
     ; Strings
     ; -------
 
-version_str db `ahci_sbe v. 1.0\0`
+version_str db `ahci_sbe v. 0.9\0`
 fatal_error_msg db `Fatal error: \0`
 pause_msg db `Press any key to continue...\n\0`
 pw_dialog_msg db `Enter password to unlock device:\0`
@@ -130,6 +132,7 @@ cur_style db 0x07 ; grey on black = default
 cur_ahci_index dw 0x0000 ; start with achi controll #0, then try #1, ...
 unlock_multiple db 0x00 ; 0=unlock single, else=unlock multiple
 last_password_length dd 0x00000000
+last_password dd 0, 0, 0, 0, 0, 0, 0, 0
 
 horiz_line_left db 0
 horiz_line_middle db 0

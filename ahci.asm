@@ -363,6 +363,7 @@ supported_enabled_and_locked:
 unlock:
     call clearall
 
+    call cls
     call pw_dialog ; returns 1 on error, 0 on success
     call cls
     cmp AX, 0
@@ -420,7 +421,7 @@ abort:
     mov [ES:EBX+HBA_PORT.cmd], EAX
 
     call clearall ; clears password in memory
-
+    call clear_last_password
 
     mov AX, 1 ; wrong password!
     ret
@@ -480,12 +481,75 @@ clearall:
     mov AX, 512
     call memclear
 
-    ; Clear command tablo
+    ; Clear command table
     mov ECX, [cmd_table]
     mov AX, 256
     call memclear
+
     ret
 
+store_last_password:
+    push AX
+    push BX
+    push ECX
+
+    mov AX, 32
+    mov BX, last_password
+    mov ECX, [ahci_data_buf]
+    add ECX, 2 ; the password field for SECURITY UNLOCK is now at ES:ECX
+store_last_password_loop:
+    mov DL, [ES:ECX]
+    mov [BX], DL
+    inc BX
+    inc ECX
+    dec AX
+    jnz store_last_password_loop
+    
+    pop ECX
+    pop BX
+    pop AX
+    ret
+
+restore_last_password:
+    push AX
+    push BX
+    push ECX
+
+    mov AX, 32
+    mov BX, last_password
+    mov ECX, [ahci_data_buf]
+    add ECX, 2 ; the password field for SECURITY UNLOCK is now at ES:ECX
+restore_last_password_loop:
+    mov DL, [BX]
+    mov [ES:ECX], DL
+    inc BX
+    inc ECX
+    dec AX
+    jnz restore_last_password_loop
+
+    pop ECX
+    pop BX
+    pop AX
+    ret
+
+clear_last_password:
+    push AX
+    push BX
+
+    mov AX, 32
+    mov BX, last_password
+clear_last_password_loop:
+    mov [BX], byte 0
+    inc BX
+    dec AX
+    jnz clear_last_password_loop
+
+    mov [unlock_multiple], byte 0
+    mov [last_password_length], dword 0
+
+    pop BX
+    pop AX
+    ret
 
 cmd_list: dd 0x00000000 ; 32 bytes, 1K aligned
 cmd_table: dd 0x00000000 ; 128 + 16 byte PRDT => 256 byte alloc, 128 byte aligned

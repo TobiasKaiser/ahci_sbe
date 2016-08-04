@@ -13,6 +13,8 @@ window_width equ 56
 pw_dialog:
     pusha
 
+    call restore_last_password
+
     mov [cur_style], byte 0x1F ; white on blue
 
     mov [horiz_line_left], byte 0xB3 ; vertical line
@@ -71,7 +73,23 @@ pw_dialog:
     int 10h
     mov AX, pw_dialog_usage_msg
     call puts
-    mov [cur_style], byte 0x1F 
+    mov [cur_style], byte 0x1F
+
+    ; Neatly fill the space between the usage hints
+    mov DH, 16
+    mov DL, (80-window_width)/2+2+12
+    mov AH, 02h ; set cursor position
+    int 10h
+    mov AL, ` `
+    call putc
+    call putc
+    mov DL, (80-window_width)/2+2+12+29
+    mov AH, 02h ; set cursor position
+    int 10h
+    mov AL, ` `
+    call putc
+    call putc
+    mov DL, (80-window_width)/2+2
 
     mov DH, 10
     mov AH, 02h ; set cursor position
@@ -85,23 +103,23 @@ pw_dialog:
     mov AX, pw_dialog_prompt
     call puts
 
+    mov EDI, 0
+
     ; restore last password to dialog
     mov ECX, [last_password_length]
-
-restore_last_password:
+restore_asterisks:
     cmp ECX, 0
-    jz restore_last_password_end
+    jz restore_asterisks_end
 
     mov AL, '*'
     call putc
 
     inc EDI
     dec ECX
-    jmp restore_last_password
+    jmp restore_asterisks
+restore_asterisks_end:
 
-restore_last_password_end:
-
-    mov DI, 0
+   
     mov ECX, [ahci_data_buf]
     add ECX, 2 ; the password field for SECURITY UNLOCK is now at ES:ECX
 
@@ -149,8 +167,8 @@ pw_delchar_ok:
 
     jmp pw_dialog_loop
 pw_dialog_end_loop:
-    mov [unlock_multiple], byte 0
-    mov [last_password_length], dword 0
+    call clear_last_password
+
 
     ; check if shift is pressed. If so, set [unlock_multiple], else clear it.
     mov AH, 0x02
@@ -162,6 +180,8 @@ pw_dialog_end_loop:
     mov [unlock_multiple], byte 1
 
     mov [last_password_length], EDI
+
+    call store_last_password
 
 pw_dialog_no_multiple:
 
