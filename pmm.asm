@@ -1,5 +1,6 @@
 ; pmm.asm -- Interaction with the POST memory manager
 ; This file is part of ahci_sbe.
+; Copyright (C) 2014 Tobias Kaiser <mail@tb-kaiser.de>
 
 
     ; Detect POST memory manager

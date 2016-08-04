@@ -1,6 +1,6 @@
 ; main.asm -- ahci_sbe main file generating PCI option ROM header structures, 
 ; performing basic initialization, %includes all other asm source files
-; Copyright (C) 2014, Tobias Kaiser <mail@tb-kaiser.de>
+; Copyright (C) 2014, 2016 Tobias Kaiser <mail@tb-kaiser.de>
 
 
 org 0
@@ -40,13 +40,22 @@ start:
 
     call pmm_detect_and_alloc
 
-    mov AX, 0 ; first achi
+loop_over_multiple_ahci_controllers:
+    mov AX, [cur_ahci_index]
     call find_ahci
+
+    cmp AX, 0
+    jnz loop_over_multiple_ahci_controllers_end
+
     call ahci_main
 
-    mov AX, 1 ; second achi
-    call find_ahci
-    call ahci_main
+    mov AX, [cur_ahci_index]
+    inc AX
+    mov [cur_ahci_index], AX
+
+    jmp loop_over_multiple_ahci_controllers
+loop_over_multiple_ahci_controllers_end:
+
 
     mov AL, [needs_reboot]
     cmp AL, 0
@@ -92,11 +101,12 @@ memclear_loop:
     ; Strings
     ; -------
 
-version_str db `ahci_sbe v. 0.4\0`
+version_str db `ahci_sbe v. 1.0\0`
 fatal_error_msg db `Fatal error: \0`
 pause_msg db `Press any key to continue...\n\0`
 pw_dialog_msg db `Enter password to unlock device:\0`
 pw_dialog_prompt db `Password: \0`
+pw_dialog_usage_msg db `ENTER=Unlock  Shift+ENTER=Unlock multiple  ESC=Skip\0`
 wrong_password_msg db `Wrong password. Press return to try again.\0`
 
     ; Error messages
@@ -117,6 +127,9 @@ sp_orig dw 0x0000 ; original stack pointer for returning in case of an error
 pmm_entry_point dw 0x0000, 0x0000 ; save PMM entry point here
 needs_reboot db 0 ; set to 1 if we need reboot
 cur_style db 0x07 ; grey on black = default
+cur_ahci_index dw 0x0000 ; start with achi controll #0, then try #1, ...
+unlock_multiple db 0x00 ; 0=unlock single, else=unlock multiple
+last_password_length dd 0x00000000
 
 horiz_line_left db 0
 horiz_line_middle db 0

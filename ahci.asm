@@ -1,8 +1,14 @@
 ; ahci.asm -- Interaction with the AHCI controller for ATA SECURITY UNLOCK
-; Copyright (C) 2014, Tobias Kaiser <mail@tb-kaiser.de>
+; Copyright (C) 2014, 2016 Tobias Kaiser <mail@tb-kaiser.de>
 
     ; Find AHCI controller via BIOS
     ; -----------------------------
+    ; This subroutine takes the index of the AHCI controller (0 for the first
+    ; controller, 1 for the second controller etc.) as argument in AX.
+    ; Return value is 0 on success: The AHCI controller was found
+    ;                 1 on failure: The AHCI controller was not found
+    ; A fatal error occurs if index=0 and no AHCI controller is found, as the
+    ; machine does not seem to have any AHCI controller then.
 find_ahci:
     push AX ; save index of ahci
 
@@ -25,13 +31,21 @@ pci_present:
     mov AX, 0b103h ; find pci class code
     mov ECX, 010601h
     pop SI ; restore index of ahci, which was an argument passed from main in AX.
+    push SI
     int 1ah
     jnc ahci_present
 
+    pop AX
+    cmp AX, 0
+    jnz ahci_not_found_but_non_fatal
     mov AX, err_no_ahci
     jmp fatal_error
+ahci_not_found_but_non_fatal:    
+    mov AX, 1 ; Return 1 on failure
+    ret
 
 ahci_present:
+    add SP, 2
 
     ; BL/HL is now bus number, device/function number
     ; now we need the HBA (host bus adapter), referenced by ABAR (AHCI Base 
@@ -47,6 +61,7 @@ ahci_present:
 
 abar_success:
     mov [abar], ECX
+    mov AX, 0 ; Return 0 on success
     ret
 
     ; AHCI data structures - See AHCI documentation

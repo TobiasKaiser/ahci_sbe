@@ -1,10 +1,14 @@
 ; io.asm -- User interface functions via BIOS
-; Copyright (C) 2014, Tobias Kaiser <mail@tb-kaiser.de>
+; Copyright (C) 2014, 2016 Tobias Kaiser <mail@tb-kaiser.de>
 
     ; Password dialog
     ; ---------------
 
-window_width equ 46
+window_width equ 56
+
+; pw_dialog provides the interface for the user to enter a password by
+; keyboard.
+; Returns 0 on success, 1 on Escape
 
 pw_dialog:
     pusha
@@ -14,6 +18,8 @@ pw_dialog:
     mov [horiz_line_left], byte 0xB3 ; vertical line
     mov [horiz_line_middle], byte 0x20 ; space
     mov [horiz_line_right], byte 0xB3 ; vertical line
+    mov DH, 7 ; line number
+    call horiz_line
     mov DH, 8 ; line number
     call horiz_line
     mov DH, 9 ; line number
@@ -22,7 +28,7 @@ pw_dialog:
     call horiz_line
     mov DH, 11 ; line number
     call horiz_line
-    mov DH, 12 ; line number
+    mov DH, 13 ; line number
     call horiz_line
     mov DH, 14 ; line number
     call horiz_line
@@ -30,51 +36,75 @@ pw_dialog:
     call horiz_line
     mov DH, 16 ; line number
     call horiz_line
+    mov DH, 17 ; line number
+    call horiz_line
 
     mov [horiz_line_middle], byte 0xC4 ; horizontal lines following
 
     mov [horiz_line_left], byte 0xDA ; top left corner
     mov [horiz_line_right], byte 0xBF ; top right corner
-    mov DH, 7 ; line number
+    mov DH, 6 ; line number
     call horiz_line
 
 
     mov [horiz_line_left], byte 0xC3 ; |-
     mov [horiz_line_right], byte 0xB4 ; -|
-    mov DH, 13 ; line number
+    mov DH, 12 ; line number
     call horiz_line
 
     mov [horiz_line_left], byte 0xC0 ; bottom left corner
     mov [horiz_line_right], byte 0xD9 ; bottom right corner
-    mov DH, 17 ; line number
+    mov DH, 18 ; line number
     call horiz_line
 
     mov DL, (80-window_width)/2+2
 
-    mov DH, 9
+    mov DH, 8
     mov AH, 02h ; set cursor position
     int 10h
-
     mov AX, pw_dialog_msg
     call puts
     
-    mov DH, 11
+    mov [cur_style], byte 0x70 ; black on gray
+    mov DH, 16
     mov AH, 02h ; set cursor position
     int 10h
+    mov AX, pw_dialog_usage_msg
+    call puts
+    mov [cur_style], byte 0x1F 
 
+    mov DH, 10
+    mov AH, 02h ; set cursor position
+    int 10h
     mov AX, identify_strbuf
     call puts
 
-    mov DH, 15
+    mov DH, 14
     mov AH, 02h ; set cursor position
     int 10h
-    
     mov AX, pw_dialog_prompt
     call puts
+
+    ; restore last password to dialog
+    mov ECX, [last_password_length]
+
+restore_last_password:
+    cmp ECX, 0
+    jz restore_last_password_end
+
+    mov AL, '*'
+    call putc
+
+    inc EDI
+    dec ECX
+    jmp restore_last_password
+
+restore_last_password_end:
 
     mov DI, 0
     mov ECX, [ahci_data_buf]
     add ECX, 2 ; the password field for SECURITY UNLOCK is now at ES:ECX
+
 pw_dialog_loop:
     call getc 
     
@@ -118,12 +148,27 @@ pw_delchar_ok:
     dec EDI
 
     jmp pw_dialog_loop
-pw_dialog_end_loop: 
+pw_dialog_end_loop:
+    mov [unlock_multiple], byte 0
+    mov [last_password_length], dword 0
+
+    ; check if shift is pressed. If so, set [unlock_multiple], else clear it.
+    mov AH, 0x02
+    int 16h
+    and AL, 3 ; first two bits are shift left and right
+    cmp AL, 0
+    jz pw_dialog_no_multiple
+
+    mov [unlock_multiple], byte 1
+
+    mov [last_password_length], EDI
+
+pw_dialog_no_multiple:
 
     mov [cur_style], byte 0x07 ; grey on black
     popa
     mov AX, 0 ; success
-    ret    
+    ret
 
     ; Error box: Wrong password
     ; -------------------------
