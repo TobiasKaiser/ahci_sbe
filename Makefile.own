@@ -5,7 +5,9 @@ do: flash
 all: ahci_sbe.qemu.rom ahci_sbe.vbox.rom ahci_sbe.realtek.rom
 
 flash: ahci_sbe.realtek.rom
-	usbcprog -d /dev/ttyACM0 -t -p 2864 -w $<
+	dd if=/dev/zero of=$< bs=1 count=0 seek=8192
+	#usbcprog -d /dev/ttyACM0 -t -p 2864 -w $<
+	minipro -p AT28C64B -w $<
 
 ahci_sbe.qemu.rom: $(SRC) addchecksum
 	nasm main.asm -fbin -o $@ -dPCI_VENDOR_ID=0x8086 -dPCI_DEVICE_ID=0x100E
