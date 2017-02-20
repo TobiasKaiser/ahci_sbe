@@ -38,6 +38,12 @@ start:
     mov [sp_orig], SP
     call cls
 
+
+    ; Print debug output: "ahci_sbe is running."
+    mov AX, debug_msg
+    call puts
+    call pause
+
     call pmm_detect_and_alloc
 
 loop_over_multiple_ahci_controllers:
@@ -110,6 +116,7 @@ pw_dialog_msg db `Enter password to unlock device:\0`
 pw_dialog_prompt db `Password: \0`
 pw_dialog_usage_msg db `ENTER=Unlock  Shift+ENTER=Unlock multiple  ESC=Skip\0`
 wrong_password_msg db `Wrong password. Press return to try again.\0`
+debug_msg db `Debug message: ahci_sbe is running.\n\0`
 
     ; Error messages
     ; --------------
