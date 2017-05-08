@@ -1,3 +1,5 @@
+[ahci_sbe website](http://www.tb-kaiser.de/ahci_sbe/)
+
 AHCI BIOS Security Extension
 ============================
 
@@ -12,10 +14,10 @@ This software is useful if
 <b>This is a BIOS extension that runs before the operating system is started and allows you to enter passwords to unlock SATA drives.</b>
 
 **New features in version 0.9:**
+
 * Support for multiple AHCI controllers (e. g. additional PCIe SATA cards)
 * Press Shift+Enter for *Unlock multiple*: Enter password once and use it for multiple disks without having to type it again.
 
-<a href="http://www.tb-kaiser.de/ahci_sbe/ahci_sbe_0.9.zip">Download AHCI BIOS Security Extension ahci_sbe 0.9</a>
 
 Screenshot
 ----------
@@ -28,11 +30,19 @@ Build / Installation
 
 The easiest way to use this software is to flash it to a PCI / PCIe network adapter's option ROM.
 
-## Links
+&rarr; [My blog post about how I recommend installing ahci_sbe.](http://www.tb-kaiser.de/blog/2017/04/28/installing_ahci_sbe/)
 
 More information on flashing PCI option ROMs:
 
 * <http://www.richud.com/wiki/Network_gPXE_and_iPXE_Flashrom_Intel_Pro_100>
+
+Troubleshooting: Erorr message "Port not idle"
+----------------------------------------------
+
+If this error appears, you can try to change line 225 in ahci.asm from the conditional jump <code>jz check\_port\_cmd\_ok</code> to the unconditional jump <code>jmp check\_port\_cmd\_ok</code>. This will work in some cases. Thanks to Chain for reporting the problem and fix. Instead of fixing it yourself in the source code, you can also download a fixed version of ahci_sbe 0.9 [here](https://github.com/TobiasKaiser/ahci_sbe/archive/port_not_idle_fix.zip).
+
+More links
+----------
 
 This project inspired me to write ahci_sbe. It has more features, but only supports IDE, not AHCI controllers:
 
@@ -40,6 +50,4 @@ This project inspired me to write ahci_sbe. It has more features, but only suppo
 
 ----
 
-Copyright &copy; 2014 &ndash; 2016 Tobias Kaiser <mail@tb-kaiser.de>
-
-See also: http://www.tb-kaiser.de/ahci_sbe/
+Copyright &copy; 2014 &ndash; 2017 Tobias Kaiser <mail@tb-kaiser.de>
