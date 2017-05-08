@@ -222,7 +222,7 @@ check_port_sig_ok:
     ;2. Ensure that PxCMD.ST = ‘0’, PxCMD.CR = ‘0’, PxCMD.FRE = ‘0’, PxCMD.FR = ‘0’
     mov EAX, [ES:EBX+HBA_PORT.cmd]
     and EAX, (1<<0)|(1<<15)|(1<<14)|(1<<4)
-    jz check_port_cmd_ok
+    jmp check_port_cmd_ok
 
     mov AX, err_port_not_idle
     call puts
